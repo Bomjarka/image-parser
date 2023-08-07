@@ -40,17 +40,56 @@ class HomeController extends Controller
                         $imagesUrls[$item->filter('img')->attr('alt')] =  $item->filter('img')->attr('src');
                     }
 
+                    $savedImageNames = [];
                     foreach ($imagesUrls as $alt => $url) {
                         if (str_contains($url, 'http')) {
                             $content = file_get_contents($url);
-                            Storage::disk('local')->put($alt . '-' . Str::random(5) . 'jpg', $content);
+                            $name = $alt . '-' . Str::random(5) . '.jpg';
+                            Storage::disk('public')->put($name, $content);
+                            $savedImageNames[] = $name;
                         }
-
                     }
+
+                    return redirect()->route('parsed.url')->with([
+                        'parsedWebsite' => $websiteToParse,
+                        'parsedImages' => $savedImageNames,
+                        'foundImagesCount' => count($imagesUrls),
+                    ]);
                 }
             } catch (GuzzleException $e) {
                 return $e->getMessage();
             }
         }
+    }
+
+    public function parsed()
+    {
+        $parsedWebsite = session()->get('parsedWebsite');
+        $parsedImages = session()->get('parsedImages');
+        $foundImagesCount = session()->get('foundImagesCount');
+
+        $size = 0;
+
+        foreach ($parsedImages as $parsedImage) {
+            $size += Storage::disk('public')->size($parsedImage);
+        }
+
+        $rows = ceil(count($parsedImages) / 4);
+        $offset = 0;
+        $images = [];
+        for ($i = 1; $i <= $rows; $i++) {
+            $images[] = array_slice($parsedImages, $offset, 4);
+            $offset += 4;
+        }
+
+        $bytes = number_format($size / 1048576, 2) . ' МБ';
+
+        return view('parsed', [
+            'parsedWebsite' => $parsedWebsite,
+            'parsedImages' => $images,
+            'parsedImagesCount' => count($parsedImages),
+            'foundImagesCount' => $foundImagesCount,
+            'totalSize' => $bytes,
+        ]);
     }
 }
