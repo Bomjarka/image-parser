@@ -17,3 +17,4 @@ Route::get('/', function () {
     return view('url');
 });
 Route::post('/', [App\Http\Controllers\HomeController::class, 'parse'])->name('parse.url');
+Route::get('/parsed', [App\Http\Controllers\HomeController::class, 'parsed'])->name('parsed.url');
