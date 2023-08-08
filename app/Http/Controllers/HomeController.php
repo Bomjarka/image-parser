@@ -2,26 +2,45 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Web;
+use App\Services\CrawlerService;
+use App\Services\ImageService;
+use App\Services\WebService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\View\Factory;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
-use Symfony\Component\DomCrawler\Crawler;
 
 class HomeController extends Controller
 {
-    /**
-     * Create a new controller instance.
-     *
-     * @return void
-     */
-    public function __construct()
+    private const IMAGES_IN_ROW = 4;
+
+    public function parsedSites()
     {
+        $sites = Web::all();
+
+        return view('parsed_sites', ['websites' => $sites]);
     }
 
-    public function parse(Request $request)
+    /**
+     * @param Request $request
+     * @param WebService $webService
+     * @param CrawlerService $crawlerService
+     * @param ImageService $imageService
+     * @return RedirectResponse
+     * @throws \Exception
+     */
+    public function parse(
+        Request        $request,
+        WebService     $webService,
+        CrawlerService $crawlerService,
+        ImageService   $imageService
+    ): RedirectResponse
     {
         $websiteToParse = $request->get('website');
 
@@ -30,66 +49,90 @@ class HomeController extends Controller
             try {
                 $response = $client->get($websiteToParse);
                 if ($response->getStatusCode() === Response::HTTP_OK) {
-                    $htmlString = (string) $response->getBody();
-                    $crawler = new Crawler($htmlString);
-                    $elements = $crawler->filter('img')->each(function (Crawler $node, $i) {
-                        return $node;
-                    });
-                    $imagesUrls = [];
-                    foreach ($elements as $item) {
-                        $imagesUrls[$item->filter('img')->attr('alt')] =  $item->filter('img')->attr('src');
+                    $web = Web::whereUrl($websiteToParse)->first();
+                    if (!$web) {
+                        $web = $webService->createWeb($websiteToParse);
                     }
-
-                    $savedImageNames = [];
-                    foreach ($imagesUrls as $alt => $url) {
-                        if (str_contains($url, 'http')) {
-                            $content = file_get_contents($url);
-                            $name = $alt . '-' . Str::random(5) . '.jpg';
-                            Storage::disk('public')->put($name, $content);
-                            $savedImageNames[] = $name;
+                    $htmlString = (string)$response->getBody();
+                    $imagesUrls = $crawlerService->getImagesDataFromHTML($htmlString);
+                    foreach ($imagesUrls as $name => $imageUrl) {
+                        if ($imageUrl) {
+                            if (!str_contains($imageUrl, 'http')) {
+                                $imageUrl = $this->relativeURLtoAbsolute($imageUrl, $websiteToParse);
+                            }
+                            $imageService->createImage($name, $imageUrl, $web);
                         }
                     }
 
-                    return redirect()->route('parsed.url')->with([
-                        'parsedWebsite' => $websiteToParse,
-                        'parsedImages' => $savedImageNames,
-                        'foundImagesCount' => count($imagesUrls),
-                    ]);
+                    return redirect()->route('parsed.url', ['web' => $web]);
                 }
             } catch (GuzzleException $e) {
-                return $e->getMessage();
+                return back()->withErrors(['msg' => $e->getMessage()]);
             }
         }
+        return back()->withErrors(['msg' => 'Something went wrong']);
     }
 
-    public function parsed()
+    /**
+     * @param Web $web
+     * @return Application|Factory|View|\Illuminate\Foundation\Application
+     */
+    public function parsed(Web $web): View|\Illuminate\Foundation\Application|Factory|Application
     {
-        $parsedWebsite = session()->get('parsedWebsite');
-        $parsedImages = session()->get('parsedImages');
-        $foundImagesCount = session()->get('foundImagesCount');
-
+        $images = $web->images;
         $size = 0;
 
-        foreach ($parsedImages as $parsedImage) {
-            $size += Storage::disk('public')->size($parsedImage);
+        foreach ($images as $image) {
+            $size += Storage::disk('public')->size('/' . $image->web->host . '/' . $image->name);
         }
 
-        $rows = ceil(count($parsedImages) / 4);
+        $rows = ceil(count($images) / self::IMAGES_IN_ROW);
+
         $offset = 0;
-        $images = [];
+        $imagesArray = [];
         for ($i = 1; $i <= $rows; $i++) {
-            $images[] = array_slice($parsedImages, $offset, 4);
+            $imagesArray[] = $images->slice($offset, self::IMAGES_IN_ROW);
             $offset += 4;
         }
 
         $bytes = number_format($size / 1048576, 2) . ' МБ';
 
         return view('parsed', [
-            'parsedWebsite' => $parsedWebsite,
-            'parsedImages' => $images,
-            'parsedImagesCount' => count($parsedImages),
-            'foundImagesCount' => $foundImagesCount,
+            'web' => $web,
+            'parsedImages' => $imagesArray,
+            'parsedImagesCount' => count($images),
             'totalSize' => $bytes,
         ]);
     }
+
+    /**
+     * @param Web $web
+     * @param ImageService $imageService
+     * @return RedirectResponse
+     */
+    public function destroyParsedSite(Web $web, ImageService $imageService): RedirectResponse
+    {
+        $images = $web->images;
+        foreach ($images as $image) {
+            $imageService->destroyImage($image);
+        }
+
+        Storage::disk('public')->deleteDirectory($web->host);
+        $web->delete();
+
+        return redirect()->route('parsed.sites');
+    }
+
+    /**
+     * @param $relative
+     * @param $base
+     * @return string
+     */
+    private function relativeURLtoAbsolute($relative, $base): string
+    {
+        $urlParts = parse_url($base);
+
+        return $urlParts['scheme'] . '://' . $urlParts['host'] . $relative;
+    }
+
 }

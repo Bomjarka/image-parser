@@ -1,0 +1,36 @@
+name: Application CI
+
+on:
+  pull_request:
+    branches: [ master, staging ]
+
+jobs:
+  build-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Copy .env.example to .env
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+      - name: Set UID
+        run: sed -i "s/DEV_LOCAL_UID=1/DEV_LOCAL_UID="$(id -u)"/" .env
+      - name: Set GID
+        run: sed -i "s/DEV_LOCAL_GID=1/DEV_LOCAL_GID="$(id -u)"/" .env
+      - name: Set Database Provider
+        run: sed -i "s/DB_HOST=db/DB_HOST=postgres/" .env
+      - name: Up container
+        run: docker-compose up -dd
+      - name: Install Composer
+        run: docker-compose exec -T backend bash -lc 'composer install'
+      - name: Generate key
+        run: docker-compose exec -T backend bash -lc 'php artisan key:generate'
+      - name: Database Migrations
+        run: docker-compose exec -T backend bash -lc 'php artisan migrate:fresh'
+      - name: Database Seeders
+        run: docker-compose exec -T backend bash -lc 'php artisan db:seed'
+      - name: Create storage symlink
+        run: docker-compose exec -T backend bash -lc 'php artisan storage:link'
+      - name: Optimize project
+        run: docker-compose exec -T backend bash -lc 'php artisan optimize:clear'
+      - name: PHPUnit
+        run: docker-compose exec -T backend bash -lc './vendor/bin/phpunit tests/Unit'
+
