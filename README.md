@@ -9,7 +9,7 @@ This application allows users to get all images from any webpage
 - ```shell
   make install
     ```
-- open http://parser.local/:8081
+- open http://parser.local:8081/
 
 
 ### Checklist
