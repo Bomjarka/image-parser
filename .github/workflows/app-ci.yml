@@ -16,7 +16,7 @@ jobs:
       - name: Set GID
         run: sed -i "s/DEV_LOCAL_GID=1/DEV_LOCAL_GID="$(id -u)"/" .env
       - name: Set Database Provider
-        run: sed -i "s/DB_HOST=db/DB_HOST=postgres/" .env
+        run: sed -i "s/DB_HOST=127.0.0.1/DB_HOST=postgres/" .env
       - name: Up container
         run: docker-compose up -d
       - name: Install Composer
