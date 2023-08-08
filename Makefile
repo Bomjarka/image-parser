@@ -29,7 +29,7 @@ up: ## Запуск контейнеров в фоновом режиме
 		$(shell docker-compose up -d)
 
 down: ## Отключение контейнеров
-		$(shell docker-compose down)
+		$(shell docker-compose down -v)
 
 shell: ## Запуск bash в контейнере
 		docker-compose exec $(APP_CONTAINER_NAME) bash

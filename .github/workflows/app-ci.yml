@@ -18,7 +18,7 @@ jobs:
       - name: Set Database Provider
         run: sed -i "s/DB_HOST=db/DB_HOST=postgres/" .env
       - name: Up container
-        run: docker-compose up -dd
+        run: docker-compose up -d
       - name: Install Composer
         run: docker-compose exec -T backend bash -lc 'composer install'
       - name: Generate key
