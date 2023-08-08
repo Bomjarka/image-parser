@@ -5,7 +5,6 @@ This application allows users to get all images from any webpage
 ### Instaliation
 
 - clone project
--
 - ```shell
   make install
     ```
